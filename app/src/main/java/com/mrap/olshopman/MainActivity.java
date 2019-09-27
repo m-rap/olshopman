@@ -12,27 +12,23 @@ import android.widget.TextView;
 
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.CollectionReference;
+import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.Transaction;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
-import java.io.PrintStream;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 
 public class MainActivity extends AppCompatActivity {
+    public static final String TAG = "aasd";
     private FirebaseAuth mAuth;
 
     @Override
@@ -60,9 +56,7 @@ public class MainActivity extends AppCompatActivity {
         if (!f.exists())
             return;
 
-        ByteArrayOutputStream os = new ByteArrayOutputStream();
-        PrintStream ps = new PrintStream(os);
-        ArrayDeque<Item> items = new ArrayDeque<>();
+        final ArrayDeque<Item> items = new ArrayDeque<>();
         try {
             BufferedReader r = new BufferedReader(new FileReader(f));
 
@@ -91,8 +85,9 @@ public class MainActivity extends AppCompatActivity {
             for (String[] mat : mats) {
                 Item material = null;
                 for (Item item : items) {
-                    if (item.name.equals(mat[1])) {
+                    if (item.name.equals(mat[1]) && !item.name.equals(mat[0])) {
                         material = item;
+                        break;
                     }
                 }
                 if (material != null) {
@@ -104,39 +99,73 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         } catch (FileNotFoundException e) {
-            e.printStackTrace(ps);
-            String t = os.toString();
-            txtHello.setText(t);
+            e.printStackTrace();
             return;
         } catch (IOException e) {
-            e.printStackTrace(ps);
-            String t = os.toString();
-            txtHello.setText(t);
+            e.printStackTrace();
             return;
         } catch (NumberFormatException e) {
-            e.printStackTrace(ps);
-            String t = os.toString();
-            txtHello.setText(t);
+            e.printStackTrace();
             return;
         }
 
         try {
             FirebaseFirestore.setLoggingEnabled(true);
-            FirebaseFirestore firestore = FirebaseFirestore.getInstance();
-            CollectionReference itemRef = firestore.collection("items");
+            final FirebaseFirestore firestore = FirebaseFirestore.getInstance();
+            final CollectionReference itemRef = firestore.collection("items");
+            final HashMap<String, String> itemRefMap = new HashMap<>();
 
             StringBuilder sb = new StringBuilder();
             int i = 0;
-            for (Item s : items) {
-                HashMap<String, Object> itemMap = new HashMap<>();
-                itemMap.put("qty", 0.0f);
-                itemRef.document(URLEncoder.encode(s.name, "UTF-8")).set(itemMap);
+            for (final Item s : items) {
+                HashMap<String, Object> data = new HashMap<>();
+                data.put("name", s.name);
+                if (s.materials.isEmpty()) {
+                    data.put("isbundle", false);
+                    data.put("qty", 0.0f);
+                } else {
+                    data.put("isbundle", true);
+                }
+                itemRef.add(data).addOnSuccessListener(new OnSuccessListener<DocumentReference>() {
+                    @Override
+                    public void onSuccess(final DocumentReference documentReference) {
+                        if (s.materials.isEmpty())
+                            return;
+                        for (Pair<Item, Float> m : s.materials) {
+                            HashMap<String, Object> data = new HashMap<>();
+                            data.put("itemId", documentReference.getId());
+                            data.put("ammount", m.second);
+                            documentReference.collection("materials").add(data);
+                        }
+                        firestore.runTransaction(new Transaction.Function<Void>() {
+                            @Nullable
+                            @Override
+                            public Void apply(@NonNull Transaction transaction) throws FirebaseFirestoreException {
+                                return null;
+                            }
+                        }).addOnSuccessListener(new OnSuccessListener<Void>() {
+                            @Override
+                            public void onSuccess(Void aVoid) {
+                                Log.d(TAG, "success adding materials of " + documentReference.getId()
+                                        + " " + s.name + "!");
+                            }
+                        }).addOnFailureListener(new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                Log.d(TAG, "fail adding materials of " + documentReference.getId()
+                                        + " " + s.name + "!");
+                            }
+                        });
+                    }
+                });
+
                 if (i > 0)
                     sb.append("\n").append(s.name);
                 else
                     sb.append(s.name);
                 i++;
             }
+
             if (i > 0)
                 txtHello.setText(sb.toString());
 
@@ -149,20 +178,18 @@ public class MainActivity extends AppCompatActivity {
             }).addOnSuccessListener(new OnSuccessListener<Void>() {
                 @Override
                 public void onSuccess(Void o) {
-                    Log.d("aasd", "success!");
+                    Log.d(TAG, "success!");
                 }
             }).addOnFailureListener(new OnFailureListener() {
                 @Override
                 public void onFailure(@NonNull Exception e) {
-                    Log.d("aasd", "fail!");
+                    Log.d(TAG, "fail!");
                 }
             });
 
             //System.gc();
         } catch (Exception e) {
-            e.printStackTrace(ps);
-            String t = os.toString();
-            txtHello.setText(t);
+            e.printStackTrace();
         }
     }
 }
