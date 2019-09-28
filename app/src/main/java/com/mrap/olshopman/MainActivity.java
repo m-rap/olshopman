@@ -10,13 +10,16 @@ import android.util.Log;
 import android.util.Pair;
 import android.widget.TextView;
 
+import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.CollectionReference;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.Transaction;
 
 import java.io.BufferedReader;
@@ -53,8 +56,12 @@ public class MainActivity extends AppCompatActivity {
         TextView txtHello = (TextView) findViewById(R.id.txtHello);
 
         File f = new File(Environment.getExternalStorageDirectory(), "Download/olshop transaction - bundle detail.csv");
-        if (!f.exists())
+        if (!f.exists()) {
+            f = new File(Environment.getDataDirectory(), "Download/olshop transaction - bundle detail.csv");
+        }
+        if (!f.exists()) {
             return;
+        }
 
         final ArrayDeque<Item> items = new ArrayDeque<>();
         try {
@@ -109,87 +116,92 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        try {
-            FirebaseFirestore.setLoggingEnabled(true);
-            final FirebaseFirestore firestore = FirebaseFirestore.getInstance();
-            final CollectionReference itemRef = firestore.collection("items");
-            final HashMap<String, String> itemRefMap = new HashMap<>();
+        final FirebaseFirestore firestore = FirebaseFirestore.getInstance();
+        final CollectionReference itemRef = firestore.collection("items");
 
-            StringBuilder sb = new StringBuilder();
-            int i = 0;
-            for (final Item s : items) {
-                HashMap<String, Object> data = new HashMap<>();
-                data.put("name", s.name);
-                if (s.materials.isEmpty()) {
-                    data.put("isbundle", false);
-                    data.put("qty", 0.0f);
-                } else {
-                    data.put("isbundle", true);
-                }
-                itemRef.add(data).addOnSuccessListener(new OnSuccessListener<DocumentReference>() {
-                    @Override
-                    public void onSuccess(final DocumentReference documentReference) {
-                        if (s.materials.isEmpty())
-                            return;
-                        for (Pair<Item, Float> m : s.materials) {
-                            HashMap<String, Object> data = new HashMap<>();
-                            data.put("itemId", documentReference.getId());
-                            data.put("ammount", m.second);
-                            documentReference.collection("materials").add(data);
-                        }
-                        firestore.runTransaction(new Transaction.Function<Void>() {
-                            @Nullable
-                            @Override
-                            public Void apply(@NonNull Transaction transaction) throws FirebaseFirestoreException {
-                                return null;
-                            }
-                        }).addOnSuccessListener(new OnSuccessListener<Void>() {
-                            @Override
-                            public void onSuccess(Void aVoid) {
-                                Log.d(TAG, "success adding materials of " + documentReference.getId()
-                                        + " " + s.name + "!");
-                            }
-                        }).addOnFailureListener(new OnFailureListener() {
-                            @Override
-                            public void onFailure(@NonNull Exception e) {
-                                Log.d(TAG, "fail adding materials of " + documentReference.getId()
-                                        + " " + s.name + "!");
-                            }
-                        });
+        StringBuilder sb = new StringBuilder();
+        int i = 0;
+        for (final Item s : items) {
+            itemRef.whereEqualTo("name", s.name).get().addOnCompleteListener(new OnCompleteListener<QuerySnapshot>() {
+                @Override
+                public void onComplete(@NonNull Task<QuerySnapshot> task) {
+                    if (!task.isSuccessful()) {
+                        Log.d(TAG, "fail query " + s.name);
+                        return;
                     }
-                });
-
-                if (i > 0)
-                    sb.append("\n").append(s.name);
-                else
-                    sb.append(s.name);
-                i++;
-            }
-
-            if (i > 0)
-                txtHello.setText(sb.toString());
-
-            firestore.runTransaction(new Transaction.Function<Void>() {
-                @Nullable
-                @Override
-                public Void apply(@NonNull Transaction transaction) throws FirebaseFirestoreException {
-                    return null;
-                }
-            }).addOnSuccessListener(new OnSuccessListener<Void>() {
-                @Override
-                public void onSuccess(Void o) {
-                    Log.d(TAG, "success!");
-                }
-            }).addOnFailureListener(new OnFailureListener() {
-                @Override
-                public void onFailure(@NonNull Exception e) {
-                    Log.d(TAG, "fail!");
+                    if (!task.getResult().isEmpty()) {
+                        Log.d(TAG, s.name + " already exists");
+                        return;
+                    }
+                    HashMap<String, Object> data = new HashMap<>();
+                    data.put("name", s.name);
+                    if (s.materials.isEmpty()) {
+                        data.put("isbundle", false);
+                        data.put("qty", 0.0f);
+                    } else {
+                        data.put("isbundle", true);
+                    }
+                    itemRef.add(data).addOnSuccessListener(new OnSuccessListener<DocumentReference>() {
+                        @Override
+                        public void onSuccess(final DocumentReference documentReference) {
+                            if (s.materials.isEmpty())
+                                return;
+                            for (Pair<Item, Float> m : s.materials) {
+                                HashMap<String, Object> data = new HashMap<>();
+                                data.put("itemId", documentReference.getId());
+                                data.put("ammount", m.second);
+                                documentReference.collection("materials").add(data);
+                            }
+                            firestore.runTransaction(new Transaction.Function<Void>() {
+                                @Nullable
+                                @Override
+                                public Void apply(@NonNull Transaction transaction) throws FirebaseFirestoreException {
+                                    return null;
+                                }
+                            }).addOnSuccessListener(new OnSuccessListener<Void>() {
+                                @Override
+                                public void onSuccess(Void aVoid) {
+                                    Log.d(TAG, "success adding materials of " + documentReference.getId()
+                                            + " " + s.name + "!");
+                                }
+                            }).addOnFailureListener(new OnFailureListener() {
+                                @Override
+                                public void onFailure(@NonNull Exception e) {
+                                    Log.d(TAG, "fail adding materials of " + documentReference.getId()
+                                            + " " + s.name + "!");
+                                }
+                            });
+                        }
+                    });
                 }
             });
 
-            //System.gc();
-        } catch (Exception e) {
-            e.printStackTrace();
+            if (i > 0)
+                sb.append("\n").append(s.name);
+            else
+                sb.append(s.name);
+            i++;
         }
+
+        if (i > 0)
+            txtHello.setText(sb.toString());
+
+        firestore.runTransaction(new Transaction.Function<Void>() {
+            @Nullable
+            @Override
+            public Void apply(@NonNull Transaction transaction) throws FirebaseFirestoreException {
+                return null;
+            }
+        }).addOnSuccessListener(new OnSuccessListener<Void>() {
+            @Override
+            public void onSuccess(Void o) {
+                Log.d(TAG, "success!");
+            }
+        }).addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                Log.d(TAG, "fail!");
+            }
+        });
     }
 }
