@@ -25,18 +25,20 @@ import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
-import java.util.Date;
 import java.util.HashMap;
 
 public class CsvToFirestore {
-    public static final String TAG = "CsvToFirestore";
-    static final String itemFilename = "Download/olshop transaction - bundle detail.csv";
-    static final String transactionFilename = "Download/olshop transaction - bundle detail.csv";
-    static final String detailTransactionFilename = "Download/olshop transaction - bundle detail.csv";
+    private static final String TAG = "CsvToFirestore";
+    private static final String itemFilename = "Download/olshop transaction - bundle detail.csv";
+    private static final String transactionFilename = "Download/olshop transaction - bundle detail.csv";
+    private static final String detailTransactionFilename = "Download/olshop transaction - bundle detail.csv";
 
-    void exportItems() throws IOException {
-        final ArrayDeque<Item> items = importItems();
-        if (items == null) return;
+    private ArrayDeque<Item> items = new ArrayDeque<>();
+    private ArrayDeque<OlshopTransaction> olTrans = new ArrayDeque<>();
+
+    public void exportItems() throws IOException {
+        importItems();
+        if (items.isEmpty()) return;
 
         final FirebaseFirestore firestore = FirebaseFirestore.getInstance();
         final CollectionReference itemRef = firestore.collection("items");
@@ -50,6 +52,7 @@ public class CsvToFirestore {
                         return;
                     }
                     if (!task.getResult().isEmpty()) {
+                        it.id = task.getResult().iterator().next().getId();
                         Log.d(TAG, it.name + " already exists");
                         return;
                     }
@@ -64,6 +67,7 @@ public class CsvToFirestore {
                     itemRef.add(data).addOnSuccessListener(new OnSuccessListener<DocumentReference>() {
                         @Override
                         public void onSuccess(final DocumentReference documentReference) {
+                            it.id = documentReference.getId();
                             if (it.materials.isEmpty())
                                 return;
                             for (Pair<Item, Double> m : it.materials) {
@@ -116,16 +120,16 @@ public class CsvToFirestore {
         });
     }
 
-    ArrayDeque<Item> importItems() throws IOException {
+    public void importItems() throws IOException {
+        items.clear();
         File f = new File(Environment.getExternalStorageDirectory(), itemFilename);
         if (!f.exists()) {
             f = new File(Environment.getDataDirectory(), itemFilename);
         }
         if (!f.exists()) {
-            return null;
+            return;
         }
 
-        final ArrayDeque<Item> items = new ArrayDeque<>();
         BufferedReader r = new BufferedReader(new FileReader(f));
 
         String s;
@@ -166,58 +170,107 @@ public class CsvToFirestore {
                 }
             }
         }
-        return items;
     }
 
-    ArrayDeque<OlshopTransaction> importTransaction() throws IOException, ParseException, NumberFormatException {
+    public void importTransaction() throws IOException, ParseException, NumberFormatException {
+        olTrans.clear();
         File f = new File(Environment.getExternalStorageDirectory(), transactionFilename);
         if (!f.exists()) {
             f = new File(Environment.getDataDirectory(), transactionFilename);
         }
         if (!f.exists()) {
-            return null;
+            return;
         }
 
-        final ArrayDeque<OlshopTransaction> olTrans = new ArrayDeque<>();
         BufferedReader r = new BufferedReader(new FileReader(f));
 
         String s;
         boolean first = true;
-        ArrayDeque<String> olTranStrs = new ArrayDeque<>();
         while ((s = r.readLine()) != null) {
             if (first) {
                 first = false;
                 continue;
             }
             SimpleDateFormat sdf = new SimpleDateFormat("dd-MMM-yyyy");
-
             String[] ss = s.split(",");
-            OlshopTransaction olTran = new OlshopTransaction();
-            olTran.tempId              = Integer.parseInt(ss[0]);
-            olTran.isSell              = ss[1].equals("jual") ? true : false;
-            olTran.currency            = ss[2];
-            olTran.toIdr               = Double.parseDouble(ss[3]);
-            olTran.intShippingCost     = Double.parseDouble(ss[4]);
-            olTran.localShippingCost   = Double.parseDouble(ss[5]);
-            olTran.insurance           = Double.parseDouble(ss[6]);
-            olTran.orderDate           = sdf.parse(ss[7]);
-            olTran.arriveDate          = sdf.parse(ss[8]);
-            olTran.status              = ss[13];
-            olTran.platform            = ss[14];
-            olTran.user                = ss[15];
-            olTran.userId              = ss[16];
-            olTran.shippingName        = ss[17];
-            olTran.shippingAddress     = ss[18];
-            olTran.courier             = ss[19];
-            olTran.courierTrackingCode = ss[20];
-            olTran.address             = ss[21];
-            olTran.city                = ss[22];
-            olTran.province            = ss[23];
-            olTran.postalCode          = ss[24];
-            olTran.phone               = ss[25];
-            olTran.fee                 = Double.parseDouble(ss[26]);
-            olTrans.add(olTran);
+            OlshopTransaction olTran = null;
+            try {
+                olTran = new OlshopTransaction();
+                olTran.tempId = Integer.parseInt(ss[0]);
+                olTran.isSell = ss[1].equals("jual");
+                olTran.currency = ss[2];
+                olTran.toIdr = Double.parseDouble(ss[3]);
+                olTran.intShippingCost = Double.parseDouble(ss[4]);
+                olTran.localShippingCost = Double.parseDouble(ss[5]);
+                olTran.insurance = Double.parseDouble(ss[6]);
+                olTran.orderDate = sdf.parse(ss[7]);
+                olTran.arriveDate = sdf.parse(ss[8]);
+                olTran.status = ss[13];
+                olTran.platform = ss[14];
+                olTran.user = ss[15];
+                olTran.userId = ss[16];
+                olTran.shippingName = ss[17];
+                olTran.shippingAddress = ss[18];
+                olTran.courier = ss[19];
+                olTran.courierTrackingCode = ss[20];
+                olTran.address = ss[21];
+                olTran.city = ss[22];
+                olTran.province = ss[23];
+                olTran.postalCode = ss[24];
+                olTran.phone = ss[25];
+                olTran.fee = Double.parseDouble(ss[26]);
+            } catch (IndexOutOfBoundsException e) { }
+            if (olTran != null)
+                olTrans.add(olTran);
         }
-        return olTrans;
+    }
+
+    public void importDetailTransaction() throws IOException, NumberFormatException {
+        if (items.isEmpty())
+            return;
+        if (olTrans.isEmpty())
+            return;
+
+        for (OlshopTransaction tran : olTrans) {
+            tran.details.clear();
+        }
+
+        File f = new File(Environment.getExternalStorageDirectory(), detailTransactionFilename);
+        if (!f.exists()) {
+            f = new File(Environment.getDataDirectory(), detailTransactionFilename);
+        }
+        if (!f.exists()) {
+            return;
+        }
+
+        BufferedReader r = new BufferedReader(new FileReader(f));
+
+        String s;
+        boolean first = true;
+        while ((s = r.readLine()) != null) {
+            if (first) {
+                first = false;
+                continue;
+            }
+            SimpleDateFormat sdf = new SimpleDateFormat("dd-MMM-yyyy");
+            String[] ss = s.split(",");
+            DetailTransaction detTran = new DetailTransaction();
+            try {
+                for (Item it : items) {
+                    if (it.name.equals(ss[0])) {
+                        detTran.itemId = it.id;
+                        break;
+                    }
+                }
+                detTran.qty = Double.parseDouble(ss[1]);
+                detTran.excludeQty = Double.parseDouble(ss[13]);
+                for (OlshopTransaction tran : olTrans) {
+                    if (tran.tempId == Integer.parseInt(ss[6])) {
+                        tran.details.add(detTran);
+                        break;
+                    }
+                }
+            } catch (IndexOutOfBoundsException e) { }
+        }
     }
 }

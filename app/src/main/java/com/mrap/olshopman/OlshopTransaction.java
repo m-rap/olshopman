@@ -1,5 +1,6 @@
 package com.mrap.olshopman;
 
+import java.util.ArrayDeque;
 import java.util.Date;
 
 public class OlshopTransaction {
@@ -26,4 +27,5 @@ public class OlshopTransaction {
     public String  postalCode;
     public String  phone;
     public double  fee;
+    public ArrayDeque<DetailTransaction> details = new ArrayDeque<>();
 }
